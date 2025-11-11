@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>多轨音频播放器（共享进度条）</title>
+    <title>多轨音频播放器（全局控制）</title>
     <style>
         * {
             margin: 0;
@@ -21,7 +21,7 @@
         h1 {
             color: #2c3e50;
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 20px;
         }
         .master-controls {
             background: white;
@@ -30,8 +30,28 @@
             margin-bottom: 20px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
-        .progress-section {
+        .global-play-btn {
+            background-color: #2ecc71;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
             margin-bottom: 15px;
+            transition: background 0.3s;
+        }
+        .global-play-btn:hover {
+            background-color: #27ae60;
+        }
+        .global-play-btn.paused {
+            background-color: #e67e22;
+        }
+        .global-play-btn.paused:hover {
+            background-color: #d35400;
+        }
+        .progress-section {
+            margin-bottom: 10px;
         }
         .time-display {
             font-size: 14px;
@@ -90,8 +110,9 @@
             background-color: #3498db;
             color: white;
         }
-        .btn-s:hover {
+        .btn-s:hover, .btn-s.active {
             background-color: #2980b9;
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.3);
         }
         .btn-m {
             background-color: #ecf0f1;
@@ -109,8 +130,11 @@
 <body>
     <h1>🎵 多轨音频播放器</h1>
 
-    <!-- 总控制区（共享进度条） -->
+    <!-- 总控制区（全局播放/暂停 + 共享进度条） -->
     <div class="master-controls">
+        <button class="global-play-btn" id="globalPlayBtn" onclick="toggleAllPlay()">
+            ▶️ 全部播放
+        </button>
         <div class="progress-section">
             <div class="time-display">
                 <span id="currentTime">00:00</span>
@@ -141,8 +165,7 @@
                 <button class="btn btn-s" onclick="playOnly('track2')">S</button>
                 <button class="btn btn-m" onclick="toggleMute('track2')">M</button>
             </div>
-            <audio id="track2" src="music/track2.mp3" type="audio/mpeg"></audio>
-        </div>
+            <audio id="track2" src="music/track2.mp3" type="audio/mpeg">
 
         <!-- 轨道3 -->
         <div class="track">
@@ -156,48 +179,85 @@
     </div>
 
     <script>
-        // 获取所有轨道元素和进度条
+        // 获取所有轨道元素和控制组件
         const tracks = {
             track1: document.getElementById('track1'),
             track2: document.getElementById('track2'),
             track3: document.getElementById('track3')
         };
+        const trackIds = Object.keys(tracks);
+        const globalPlayBtn = document.getElementById('globalPlayBtn');
         const progressBar = document.getElementById('progressBar');
         const progressContainer = document.getElementById('progressContainer');
         const currentTimeEl = document.getElementById('currentTime');
         const totalTimeEl = document.getElementById('totalTime');
-        let activeTracks = []; // 记录当前播放的轨道
+        let isAllPlaying = false; // 全局播放状态
 
         // 初始化：所有轨道同步进度
-        Object.values(tracks).forEach(track => {
+        trackIds.forEach(id => {
+            const track = tracks[id];
             track.addEventListener('timeupdate', syncProgress);
             track.addEventListener('loadedmetadata', updateTotalTime);
         });
 
-        // 单独播放指定轨道（暂停其他所有轨道）
-        function playOnly(trackId) {
-            const targetTrack = tracks[trackId];
-            // 暂停所有轨道
-            Object.values(tracks).forEach(track => track.pause());
-            // 播放目标轨道
-            targetTrack.play().catch(err => {
-                alert('请先点击页面任意位置再播放（浏览器限制）');
-            });
-            activeTracks = [trackId];
+        // 全局播放/暂停（默认全部一起播放）
+        function toggleAllPlay() {
+            if (isAllPlaying) {
+                // 全部暂停
+                trackIds.forEach(id => tracks[id].pause());
+                globalPlayBtn.innerHTML = '▶️ 全部播放';
+                globalPlayBtn.classList.remove('paused');
+            } else {
+                // 全部播放（首次播放需用户交互，捕获错误）
+                trackIds.forEach(id => {
+                    tracks[id].play().catch(err => {
+                        alert('请先点击页面任意位置再播放（浏览器限制）');
+                    });
+                });
+                globalPlayBtn.innerHTML = '⏸️ 全部暂停';
+                globalPlayBtn.classList.add('paused');
+            }
+            isAllPlaying = !isAllPlaying;
+            // 重置单独播放状态样式
+            document.querySelectorAll('.btn-s').forEach(btn => btn.classList.remove('active'));
         }
 
-        // 切换轨道静音状态
+        // 单独播放某一轨（暂停其他所有轨道）
+        function playOnly(trackId) {
+            // 暂停其他轨道，播放目标轨道
+            trackIds.forEach(id => {
+                if (id === trackId) {
+                    tracks[id].play().catch(err => {
+                        alert('请先点击页面任意位置再播放（浏览器限制）');
+                    });
+                } else {
+                    tracks[id].pause();
+                }
+            });
+            // 更新按钮样式和状态
+            document.querySelectorAll('.btn-s').forEach(btn => {
+                btn.classList.toggle('active', btn.getAttribute('onclick').includes(trackId));
+            });
+            globalPlayBtn.innerHTML = '▶️ 全部播放';
+            globalPlayBtn.classList.remove('paused');
+            isAllPlaying = false;
+        }
+
+        // 静音/取消静音某一轨
         function toggleMute(trackId) {
-            const targetTrack = tracks[trackId];
+            const track = tracks[trackId];
             const muteBtn = document.querySelector(`[onclick="toggleMute('${trackId}')"]`);
-            targetTrack.muted = !targetTrack.muted;
-            muteBtn.classList.toggle('muted', targetTrack.muted);
+            track.muted = !track.muted;
+            muteBtn.classList.toggle('muted', track.muted);
         }
 
         // 同步所有轨道进度条
         function syncProgress() {
             // 以第一个播放中的轨道为基准同步进度
-            const playingTrack = Object.values(tracks).find(track => !track.paused);
+            const playingTrack = trackIds
+                .map(id => tracks[id])
+                .find(track => !track.paused);
+            
             if (!playingTrack) return;
 
             const progress = (playingTrack.currentTime / playingTrack.duration) * 100;
@@ -205,7 +265,8 @@
             currentTimeEl.textContent = formatTime(playingTrack.currentTime);
             
             // 同步所有轨道的当前时间（确保进度一致）
-            Object.values(tracks).forEach(track => {
+            trackIds.forEach(id => {
+                const track = tracks[id];
                 if (track !== playingTrack && !track.paused) {
                     track.currentTime = playingTrack.currentTime;
                 }
@@ -215,7 +276,8 @@
         // 点击进度条跳转位置（所有轨道同步）
         progressContainer.addEventListener('click', (e) => {
             const clickRatio = e.offsetX / progressContainer.offsetWidth;
-            Object.values(tracks).forEach(track => {
+            trackIds.forEach(id => {
+                const track = tracks[id];
                 if (track.duration) {
                     track.currentTime = track.duration * clickRatio;
                 }
@@ -224,7 +286,7 @@
 
         // 更新总时长（取第一个加载完成的轨道时长）
         function updateTotalTime() {
-            const firstTrack = Object.values(tracks)[0];
+            const firstTrack = tracks[trackIds[0]];
             if (firstTrack.duration) {
                 totalTimeEl.textContent = formatTime(firstTrack.duration);
             }
